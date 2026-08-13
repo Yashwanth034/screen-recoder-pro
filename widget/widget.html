@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Screen Recorder Pro — Recording</title>
+  <link rel="stylesheet" href="widget.css">
+</head>
+<body>
+  <div id="widget">
+    <div id="bar">
+      <div id="grip" title="Drag to move">
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <div id="status" title="Drag to move">
+        <span id="dot"></span>
+        <span id="timer">00:00</span>
+      </div>
+      <div id="controls">
+        <button id="pauseBtn" class="pill" title="Pause / Resume (Ctrl+Shift+P)">
+          <svg viewBox="0 0 24 24" width="15" height="15"><path d="M8 5.5v13M16 5.5v13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </button>
+        <button id="screenshotBtn" class="pill" title="Screenshot (Ctrl+Shift+S)">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <rect x="2.5" y="6.5" width="13.5" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M16 10.5l5-2.7v8.4l-5-2.7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="9.2" cy="12" r="2.4" fill="none" stroke="#2dd4bf" stroke-width="1.8"/>
+          </svg>
+        </button>
+        <button id="bubbleBtn" class="pill no-bubble" title="Toggle the live preview / move the webcam bubble">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="12" cy="12" r="3.4" fill="currentColor"/>
+            <path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button id="pipBtn" class="pill" title="Open a floating PiP preview — drag the bubble to position it">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <rect x="12" y="10.5" width="7" height="6" rx="1.2" fill="currentColor"/>
+          </svg>
+        </button>
+        <button id="stopBtn" class="pill" title="Stop recording (Ctrl+Shift+R)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><rect x="6" y="6" width="12" height="12" rx="3" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bubble panel: a mini-map of the whole recording with the bubble
+         as a draggable dot — click or drag anywhere to place the bubble.
+         Open by default so the live preview (and bubble placement) is
+         visible the moment recording starts; the bubble button collapses
+         it back to the capsule. -->
+    <div id="bubblePanel" class="hidden">
+      <div id="bubbleMapWrap">
+        <img id="bubbleMap" alt="Recording map">
+        <span id="liveBadge"><i></i>LIVE</span>
+        <div id="bubbleDot"></div>
+      </div>
+      <p class="map-hint">Drag the dot, or click anywhere, to move the bubble</p>
+    </div>
+  </div>
+  <script src="widget.js"></script>
+</body>
+</html>

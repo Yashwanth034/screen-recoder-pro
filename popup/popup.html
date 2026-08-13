@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Screen Recorder Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="brand">
+        <div class="logo">
+          <span class="logo-dot"></span>
+          <span class="logo-ring"></span>
+        </div>
+        <div class="brand-copy">
+          <h2>Screen Recorder <span class="badge">PRO</span></h2>
+          <span class="brand-subtitle">Capture studio</span>
+        </div>
+      </div>
+      <span class="version"><i></i> Ready</span>
+    </div>
+
+    <div id="configForm">
+      <div class="section">
+        <div class="section-label" data-icon="capture">Capture</div>
+        <div class="segmented" role="tablist" aria-label="Recording mode">
+          <button type="button" class="seg-btn" id="modeAreaBtn" role="tab" aria-selected="true">Selected area</button>
+          <button type="button" class="seg-btn" id="modeScreenBtn" role="tab" aria-selected="false">Screen / window</button>
+          <select id="modeSelect" class="hidden-select" aria-hidden="true" tabindex="-1">
+            <option value="area">Selected Region / Area</option>
+            <option value="screen">Entire Screen / Window</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>FPS</label>
+            <select id="fpsSelect">
+              <option value="30">30 FPS</option>
+              <option value="60" selected>60 FPS</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Quality</label>
+            <select id="qualitySelect">
+              <option value="720p">720p</option>
+              <option value="1080p" selected>1080p</option>
+              <option value="4k">4K</option>
+            </select>
+          </div>
+        </div>
+        <p class="micro-hint hidden" id="qualityHint">In Area mode this sets bitrate only — resolution always matches your exact selection.</p>
+        <div class="form-group">
+          <label>Output Format</label>
+          <select id="outputFormatSelect">
+            <option value="webm" selected>WebM — recommended</option>
+            <option value="mp4">MP4 (H.264)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label" data-icon="audio">Voice &amp; audio</div>
+        <div class="form-group">
+          <label>Audio Source</label>
+          <select id="audioSourceSelect">
+            <option value="system">System Audio Only</option>
+            <option value="mic">Microphone Only</option>
+            <option value="both" selected>System + Microphone</option>
+            <option value="none">No Audio</option>
+          </select>
+        </div>
+        <p class="micro-hint" id="audioHint">Window/entire-screen capture needs “Share audio” ticked in the picker, and Linux doesn't support system audio there at all — pick “This Tab” for system audio, or use Microphone for voice.</p>
+        <div class="toggle-row">
+          <span class="toggle-label">Live Captions</span>
+          <label class="switch">
+            <input type="checkbox" id="captionsToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-group hidden" id="captionsLangGroup">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Spoken Language</label>
+              <select id="captionsLangSelect"></select>
+            </div>
+            <div class="form-group">
+              <label>Caption Size</label>
+              <select id="captionsSizeSelect"></select>
+            </div>
+          </div>
+        </div>
+        <p class="micro-hint hidden" id="captionsHint">Subtitles are burned in English (US) — the only supported spoken language. Chrome's online speech service transcribes your mic and burns compact subtitles into the video.</p>
+      </div>
+
+      <div class="section">
+        <div class="section-label" data-icon="spark">Enhancements</div>
+        <div class="toggle-row" id="countdownGroup">
+          <span class="toggle-label">3-2-1 Countdown Before Start</span>
+          <label class="switch">
+            <input type="checkbox" id="countdownToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <p class="micro-hint hidden" id="countdownHint">Countdown applies to Area mode only.</p>
+        <div class="toggle-row">
+          <span class="toggle-label">Show Mouse Cursor</span>
+          <label class="switch">
+            <input type="checkbox" id="showCursor" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Webcam Bubble</span>
+          <label class="switch">
+            <input type="checkbox" id="webcamToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-group hidden" id="webcamTestGroup">
+          <div class="form-row">
+            <button type="button" id="testCamBtn" class="btn secondary-btn small-btn">🎥 Test Camera</button>
+            <span id="testCamStatus" class="cam-status"></span>
+          </div>
+          <p class="micro-hint">Allows the camera for <b>"Screen Recorder Pro"</b> itself (not the website).</p>
+        </div>
+        <div class="form-group hidden" id="webcamPositionGroup">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Webcam Position</label>
+              <select id="webcamPositionSelect">
+                <option value="bottom-right" selected>Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Bubble Shape</label>
+              <select id="webcamShapeSelect">
+                <option value="circle" selected>Circle</option>
+                <option value="rounded">Rounded Rectangle</option>
+              </select>
+            </div>
+          </div>
+          <p class="micro-hint" id="webcamDragHint">Drag the bubble anywhere on the page once recording starts.</p>
+        </div>
+        <div class="toggle-row" id="annotateGroup">
+          <span class="toggle-label">Drawing + Text Toolbar
+            <span class="toggle-sub" id="annotateSub">pencil &amp; colored text</span>
+          </span>
+          <label class="switch">
+            <input type="checkbox" id="annotateToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Click Effects
+            <span class="toggle-sub">ripple at every click</span>
+          </span>
+          <label class="switch">
+            <input type="checkbox" id="clickEffectsToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <button id="startBtn" class="btn primary-btn">
+        <span class="btn-rec-dot"></span>
+        <span class="btn-label">Start Recording</span>
+      </button>
+      <p class="start-error hidden" id="startError"></p>
+    </div>
+
+    <div class="recording-status hidden" id="recordingStatus">
+      <div class="status-row">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusLabel">Recording</span>
+        <span class="status-timer" id="statusTimer">00:00</span>
+      </div>
+      <div class="status-actions">
+        <button id="pauseBtn" class="btn secondary-btn">⏸ Pause</button>
+        <button id="stopBtn" class="btn danger-btn">■ Stop</button>
+      </div>
+      <button id="forceResetBtn" class="reset-link">Recording stuck? Reset state</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="secondary-actions">
+      <button id="historyBtn" class="btn secondary-btn full-width">Open recording library <span aria-hidden="true">→</span></button>
+    </div>
+
+    <p class="hint">
+      <kbd>Ctrl Shift R</kbd> record · <kbd>Ctrl Shift P</kbd> pause · <kbd>Ctrl Shift S</kbd> snapshot
+    </p>
+  </div>
+  <script src="../shared/captions.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

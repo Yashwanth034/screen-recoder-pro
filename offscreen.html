@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="shared/db.js"></script>
+  <!-- deferred: the 4.6 MB RNNoise bundle (WASM embedded) stays off the
+       critical path — audioMixer.js only touches SRPRnnoise lazily at
+       recording start, and deferred scripts run before recording anyway. -->
+  <script defer src="shared/vendor/rnnoise.js"></script>
+  <script src="shared/audioMixer.js"></script>
+  <script src="shared/qualityPresets.js"></script>
+  <script src="shared/captions.js"></script>
+  <script src="offscreen.js"></script>
+</head>
+<body>
+</body>
+</html>

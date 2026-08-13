@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Studio Editor — Screen Recorder Pro</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="back-link" href="history.html">← Recording library</a>
+    <div class="topbar-title">
+      <h1>Studio Editor <span class="badge">PRO</span></h1>
+      <span id="fileInfo" class="file-info"></span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- ============ Left sidebar: tools ============ -->
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="panel-title">Edit</div>
+        <div class="btn-row">
+          <button id="undoBtn" class="btn small" disabled title="Undo last edit (Ctrl+Z)">↶ Undo</button>
+          <button id="redoBtn" class="btn small ghost" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
+          <button id="resetBtn" class="btn small ghost" title="Restore the original recording">Reset</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Add Media</div>
+        <div id="mediaTabs" class="media-tabs" role="tablist">
+          <button class="media-tab active" data-media="video" role="tab">🎬 Video</button>
+          <button class="media-tab" data-media="audio" role="tab">🎵 Audio</button>
+        </div>
+        <div id="mediaVideoPane" class="media-pane" role="tabpanel">
+          <p class="hint">Add a video clip — it lands on the <b>V (video)</b> lane, after the current clips.</p>
+          <button id="addVideoBtn" class="btn small ghost wide">＋ Add Video Clip</button>
+        </div>
+        <div id="mediaAudioPane" class="media-pane hidden" role="tabpanel">
+          <p class="hint">Add an audio clip (music / voice-over) — it lands on the <b>A (audio)</b> lane.</p>
+          <button id="addAudioBtn" class="btn small ghost wide">＋ Add Audio Clip</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Crop</div>
+        <div class="btn-row">
+          <button id="cropToggleBtn" class="btn small">✂ Crop Mode</button>
+          <button id="cropClearBtn" class="btn small ghost" disabled>Clear</button>
+        </div>
+        <div id="cropPresets" class="crop-presets">
+          <button class="crop-preset active" data-aspect="">Free</button>
+          <button class="crop-preset" data-aspect="1.7778">16:9</button>
+          <button class="crop-preset" data-aspect="0.5625">9:16</button>
+          <button class="crop-preset" data-aspect="1">1:1</button>
+          <button class="crop-preset" data-aspect="1.3333">4:3</button>
+        </div>
+        <p id="cropHint" class="hint">Turn on Crop Mode, then drag on the video to draw the area you want. Drag inside it to move, pull corners or edges to resize.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Audio</div>
+        <div id="clipAudioControls" class="audio-controls hidden">
+          <span class="control-label">Selected video clip</span>
+          <label class="range-label">Volume <b id="clipVolumeVal">100%</b></label>
+          <input type="range" id="clipVolume" min="0" max="100" value="100">
+          <label class="check-label"><input type="checkbox" id="clipMute"> Mute this clip's audio</label>
+        </div>
+        <div id="audioClipControls" class="audio-controls hidden">
+          <span class="control-label">Selected audio clip</span>
+          <label class="range-label">Volume <b id="audioClipVolumeVal">100%</b></label>
+          <input type="range" id="audioClipVolume" min="0" max="100" value="100">
+          <button id="audioClipDeleteBtn" class="btn small danger wide">Remove audio clip</button>
+        </div>
+        <p id="audioHint" class="hint">Select a video clip in the timeline to set its volume, or select an audio clip to adjust it. Music / voice-over clips play over the video.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Export</div>
+        <label class="control-label">Resolution</label>
+        <select id="exportResSelect" class="select">
+          <option value="original">Original</option>
+          <option value="1080p">1080p — faster</option>
+          <option value="720p">720p — fastest</option>
+        </select>
+        <label class="check-label"><input type="checkbox" id="noAudioChk"> Video only (skip audio)</label>
+        <button id="exportBtn" class="btn primary wide">⬇ Export Video</button>
+        <div id="exportProgressWrap" class="hidden">
+          <div class="progress-track"><div id="exportProgressFill"></div></div>
+          <div class="progress-meta">
+            <span id="exportProgressLabel">0%</span>
+            <button id="cancelExportBtn" class="btn small ghost">Cancel</button>
+          </div>
+        </div>
+        <p id="exportSummary" class="hint"></p>
+        <p id="exportHint" class="hint">Re-encoding takes roughly the length of the video. No edits → instant original. Lower resolution = much faster export.</p>
+      </section>
+    </aside>
+
+    <!-- ============ Main column: stage + timeline ============ -->
+    <section class="stage-column">
+      <div class="stage-section">
+        <div id="stage">
+          <div id="previewLayer"></div>
+          <div id="cropOverlay" class="hidden">
+            <div id="cropRect" class="hidden">
+              <span class="crop-handle tl" title="Resize"></span>
+              <span class="crop-handle tr" title="Resize"></span>
+              <span class="crop-handle bl" title="Resize"></span>
+              <span class="crop-handle br" title="Resize"></span>
+              <span class="crop-handle ml" title="Resize"></span>
+              <span class="crop-handle mr" title="Resize"></span>
+              <span class="crop-handle tm" title="Resize"></span>
+              <span class="crop-handle bm" title="Resize"></span>
+              <span id="cropDims" class="crop-dims"></span>
+            </div>
+          </div>
+          <div id="stageLoading" class="stage-msg">Loading recording…</div>
+          <div id="stageError" class="stage-msg error hidden"></div>
+        </div>
+        <div class="transport">
+          <button id="playBtn" class="btn play-btn" title="Play / Pause (Space)">▶</button>
+          <button id="loopBtn" class="btn small ghost" title="Loop playback">🔁 Loop</button>
+          <span id="timeCurrent" class="time">0:00</span>
+          <span class="time-sep">/</span>
+          <span id="timeTotal" class="time">0:00</span>
+          <span id="clipCount" class="clip-count"></span>
+        </div>
+      </div>
+
+      <div class="panel timeline-panel">
+        <div class="panel-head">
+          <span class="panel-title">Timeline</span>
+          <div class="timeline-actions">
+            <button id="splitBtn" class="btn small" disabled title="Split the selected clip at the playhead (S)">✂ Split</button>
+            <button id="deleteBtn" class="btn small danger" disabled title="Delete the video clip under the playhead (Del)">🗑 Delete</button>
+          </div>
+        </div>
+        <div id="timeline">
+          <div id="ruler"></div>
+          <div id="videoLane" class="lane">
+            <span class="lane-tag">V</span>
+            <div class="lane-clips" id="videoClipsLayer"></div>
+          </div>
+          <div id="audioLane" class="lane">
+            <span class="lane-tag">A</span>
+            <div class="lane-clips" id="audioClipsLayer"></div>
+          </div>
+          <div id="playhead"></div>
+        </div>
+        <p class="hint">Drag clip edges to trim · drag a clip to reorder or move it · tap anywhere on the timeline to move the playhead · <kbd>Space</kbd> play/pause · <kbd>S</kbd> split the selected clip (all tracks when none selected) · <kbd>Del</kbd> delete selection · <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Y</kbd> redo</p>
+      </div>
+    </section>
+  </main>
+
+  <input type="file" id="videoFileInput" accept="video/*" class="hidden">
+  <input type="file" id="audioFileInput" accept="audio/*" class="hidden">
+
+  <script src="../shared/db.js"></script>
+  <!-- srpMimeExtension / srpScaledBitrate / srpCreateMediaRecorder for export. -->
+  <script src="../shared/qualityPresets.js"></script>
+  <!-- Clip/crop math (pure functions, unit-tested). -->
+  <script src="../shared/editorMath.js"></script>
+  <script src="editor.js"></script>
+</body>
+</html>

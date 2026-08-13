@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "Screen Recorder Pro",
+  "version": "2.10.0",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "description": "High quality area, tab, and screen recorder with pause/resume, webcam overlay, selectable audio sources, annotations (pencil + draggable colored text), screenshots via the recording widget, recording history, and an optional countdown before recording starts.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "offscreen",
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "downloads",
+    "windows",
+    "system.display",
+    "notifications"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Screen Recorder Pro",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": { "default": "Ctrl+Shift+R" },
+      "description": "Start/stop recording"
+    },
+    "toggle-pause": {
+      "suggested_key": { "default": "Ctrl+Shift+P" },
+      "description": "Pause/resume recording"
+    },
+    "take-screenshot": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Capture a screenshot"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["selector/selector.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

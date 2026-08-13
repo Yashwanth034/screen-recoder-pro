@@ -1,0 +1,369 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px;
+  gap: 6px;
+  background: linear-gradient(160deg, rgba(30, 30, 38, 0.94), rgba(13, 13, 18, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+/* ---------- Capsule control bar ---------- */
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#grip {
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  grid-template-rows: repeat(3, 3px);
+  gap: 3px;
+  cursor: grab;
+  padding: 8px 2px;
+  margin-left: 2px;
+  border-radius: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s;
+}
+
+#grip:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#grip.dragging,
+#status.dragging {
+  cursor: grabbing;
+}
+
+#grip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+#status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  padding: 6px 8px;
+  margin-left: 2px;
+  border-radius: 10px;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s;
+}
+
+#status:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse 1.4s infinite ease-in-out;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+}
+
+#dot.paused {
+  background: #f59e0b;
+  animation: none;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+#timer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  min-width: 46px;
+  color: #ffffff;
+}
+
+#controls {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+button.pill {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f0f4;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.06s, background 0.15s, box-shadow 0.15s;
+}
+
+button.pill:hover {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.1);
+}
+
+button.pill:active {
+  transform: scale(0.9);
+}
+
+#pauseBtn {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: transparent;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.35);
+}
+
+#pauseBtn:hover {
+  background: linear-gradient(135deg, #4b8df7, #2f6ef0);
+}
+
+#bubbleBtn.active-on {
+  background: linear-gradient(135deg, #10b981, #0ea371);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.4);
+}
+
+#bubbleBtn.no-bubble {
+  opacity: 0.75;
+}
+
+/* Floating PiP preview button — active (green) while the PiP window is open. */
+#pipBtn.active-on {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4);
+}
+
+#pipBtn.unsupported {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The Document-PiP window hosts a copy of the bubble panel; the wrapper
+   mirrors #widget's shell so the cloned panel lays out identically. */
+#pipShell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px;
+  gap: 6px;
+  background: linear-gradient(160deg, rgba(30, 30, 38, 0.94), rgba(13, 13, 18, 0.96));
+  border-radius: 12px;
+}
+
+#stopBtn {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 2px 14px rgba(239, 68, 68, 0.45);
+  animation: glowStop 2s infinite ease-in-out;
+}
+
+#stopBtn:hover {
+  background: linear-gradient(135deg, #f05252, #e03939);
+  box-shadow: 0 2px 18px rgba(239, 68, 68, 0.65);
+}
+
+@keyframes glowStop {
+  0%, 100% { box-shadow: 0 2px 12px rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 2px 20px rgba(239, 68, 68, 0.75); }
+}
+
+/* ---------- Auto-fade (keeps the widget out of the recording) ---------- */
+#widget {
+  transition: opacity 0.5s ease;
+}
+
+/* Idle: fade to a translucent but clearly usable state. Any mouse
+   movement over the widget wakes it back to full opacity instantly.
+   (Not more aggressive than this — a near-invisible ghost reads as
+   "broken", and the widget must stay usable at a glance.) */
+#widget.faded {
+  opacity: 0.45;
+}
+
+/* While the bubble panel is open the widget fades even less (it's being
+   actively used) — just enough to be lighter in the footage. */
+#widget.faded.faded-panel {
+  opacity: 0.65;
+}
+
+/* ---------- Bubble mini-map panel ---------- */
+#bubblePanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#bubblePanel.hidden {
+  display: none;
+}
+
+#bubbleMapWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#bubbleMapWrap.placing {
+  cursor: grabbing;
+}
+
+#bubbleMap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+/* The draggable bubble marker on the mini-map. */
+#bubbleDot {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.25);
+  border: 2px solid #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
+  pointer-events: none;
+  display: none;
+}
+
+.map-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #9a9aa5;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+#liveBadge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+}
+
+#liveBadge.show {
+  display: flex;
+}
+
+#liveBadge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse 1.4s infinite ease-in-out;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+}
+
+/* Shown when no preview frames arrive — the recorder never started, or
+   this window is running stale extension code. */
+#bubbleMapWrap.no-signal::after {
+  content: "No live preview yet — the recording may still be starting. If this stays for a while, reload the extension at chrome://extensions.";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #f0b0b0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Aurora glass — shared visual language with popup and editor */
+#widget {
+  border-color: rgba(205, 211, 255, .16);
+  background:
+    radial-gradient(180px 90px at 92% -20%, rgba(128, 101, 255, .24), transparent 70%),
+    linear-gradient(155deg, rgba(26, 30, 54, .9), rgba(9, 11, 23, .94));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 16px 48px rgba(0,0,0,.58), 0 0 0 1px rgba(112,94,255,.04);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+
+#timer { color: #f4f3ff; letter-spacing: .06em; }
+
+button.pill {
+  border-color: rgba(205,211,255,.13);
+  background: rgba(255,255,255,.065);
+}
+
+button.pill:hover { background: rgba(255,255,255,.13); box-shadow: 0 0 14px rgba(135,120,255,.12); }
+
+#pauseBtn {
+  border-color: rgba(166,153,255,.35);
+  background: linear-gradient(135deg, #8474ff, #6657e8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 5px 16px rgba(89,70,210,.35);
+}
+
+#pauseBtn:hover { background: linear-gradient(135deg, #9081ff, #7163f0); }
+#bubbleBtn.active-on { background: linear-gradient(135deg, #55dff2, #2ba9bd); box-shadow: 0 5px 16px rgba(48,181,203,.3); }
+#pipBtn.active-on { background: linear-gradient(135deg, #8474ff, #6657e8); box-shadow: 0 5px 16px rgba(89,70,210,.35); }
+#bubbleMapWrap { border-color: rgba(205,211,255,.13); border-radius: 12px; }
+#bubbleDot { background: rgba(85,223,242,.2); border-color: #55dff2; box-shadow: 0 0 13px rgba(85,223,242,.75); }
+.map-hint { color: #9299b4; }
+#liveBadge { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}

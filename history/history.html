@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Recording History — Screen Recorder Pro</title>
+  <link rel="stylesheet" href="history.css">
+</head>
+<body>
+  <header>
+    <div class="history-brand"><span class="history-logo"><i></i></span><div>
+      <p class="eyebrow">Screen Recorder Pro</p>
+      <h1>Recording Library <span class="badge">LOCAL</span></h1>
+    </div></div>
+    <p class="subtitle">Your latest captures, private and stored only in this browser.</p>
+  </header>
+
+  <main id="grid"></main>
+
+  <div id="empty" class="hidden">
+    <span class="empty-icon" aria-hidden="true"></span>
+    <h2>Your library is ready</h2>
+    <p>Start a recording from the extension. Finished captures will appear here automatically.</p>
+  </div>
+
+  <div id="player" class="hidden" role="dialog" aria-modal="true" aria-label="Recording preview">
+    <div id="playerBackdrop"></div>
+    <div id="playerBox">
+      <button id="closePlayer" type="button" aria-label="Close preview">✕</button>
+      <video id="playerVideo" controls autoplay></video>
+    </div>
+  </div>
+
+  <script src="../shared/db.js"></script>
+  <!-- srpMimeExtension for correct .mp4/.webm download names. -->
+  <script src="../shared/qualityPresets.js"></script>
+  <script src="history.js"></script>
+</body>
+</html>
