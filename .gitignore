@@ -6,11 +6,15 @@ tests/
 docs/superpowers/
 coverage/
 node_modules/
+.repotunnel-tmp/
 *.db
 *.db-shm
 *.db-wal
 *.jsonl
 *.out
+
+# Generated release packages
+*.zip
 
 # Generated recordings and screenshots
 *.webm

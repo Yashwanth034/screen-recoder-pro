@@ -133,11 +133,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       outputFormat: outputFormatSelect.value,
       countdown: countdownToggle.checked,
       cursor: showCursor.checked,
-      // Mic enhancements (noise removal + noise gate) are always on for
-      // any recording — the toggles were removed; background.js forces
-      // the same values on every start path so the popup can't drift.
+      // RNNoise voice cleanup is always on for microphone recording.
+      // The hard mute gate is intentionally off so quiet words cannot be
+      // swallowed while RNNoise is loading or on soft/low-energy speech.
       noiseReduction: true,
-      noiseGate: true,
+      noiseGate: false,
       audioSource: audioSourceSelect.value,
       captions: captionsToggle.checked,
       captionsLang: captionsLangSelect.value || 'en-US',
@@ -207,12 +207,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const captionsOn = captionsToggle.checked;
     captionsLangGroup.classList.toggle('hidden', !captionsOn);
     captionsHint.classList.toggle('hidden', !captionsOn);
-    // Mic enhancements (noise removal + noise gate) are always on — they
-    // only affect the mic track, so the hints just note what happens
-    // with the current source.
+    // RNNoise cleanup + safe leveling only affect the mic track.
+    // The hard mute gate is intentionally disabled to preserve quiet words,
+    // so these hints describe the source without promising silence between phrases.
     const audioHints = {
-      both: 'Records system sound and your microphone. Noise removal + noise gate apply automatically to the mic.',
-      mic: 'Records your microphone with noise removal + noise gate applied automatically. System sound is not included.',
+      both: 'Records system sound and your microphone. Voice cleanup and safe leveling apply automatically to the mic.',
+      mic: 'Records your microphone with voice cleanup and safe leveling. System sound is not included.',
       system: 'System audio only — your microphone voice will NOT be recorded. Choose System + Microphone to include it.',
       none: 'No audio will be recorded, including your microphone.'
     };

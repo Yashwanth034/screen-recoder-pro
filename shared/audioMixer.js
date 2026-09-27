@@ -36,13 +36,12 @@
 //      voices can be damaged this way), a smoothed portion of the RAW
 //      pre-denoise frame is blended back in — a live voice can never be
 //      fully erased, while fan/music (VAD ~0) never trigger the blend.
-//   4. Voice-safe pass-through: RNNoise's denoised output is never put
-//      through an AUTOMATIC voice-activity gate (an always-on gate could
-//      classify a real speaker as noise and mute the entire voice). The
-//      OPT-IN noise gate below is the one exception: it only engages when
-//      the user explicitly enables it in the popup, and it uses RNNoise's
-//      VAD probability with hysteresis + hangover so it never chops a
-//      word boundary.
+//   4. Voice-safe pass-through: production recordings keep the hard
+//      voice-activity gate disabled. Real-speech QA showed that a hard gate
+//      can swallow quiet words and can mute most of the mic while RNNoise
+//      is still loading. The gate implementation remains below as an
+//      explicitly configurable/testable fallback, but normal recording
+//      config forces it off.
 //   5. Auto-gain: a slowly-tracked peak normalizer boosts quiet mics,
 //      followed by a soft limiter so the boost can't clip.
 //   6. Presence EQ: a subtle high-shelf restores speech definition after
@@ -91,8 +90,9 @@
 // whenever Voice Enhance is on OR the gate is enabled (see
 // srpMixAudioTracks).
 //
-// The SYSTEM audio track is never touched — that's the content being
-// recorded and must stay bit-faithful.
+// SYSTEM-ONLY audio is returned untouched. When system audio is mixed
+// with a microphone, it is attenuated slightly to leave room for speech;
+// the combined bus then gets one final safety ceiling/headroom stage.
 //
 // DE-BOOM LOW-SHELF — measured on a real laptop-mic recording, sub-200 Hz
 // made up ~38% of the mic signal (vs ~16% for a natural male voice): the
@@ -101,8 +101,28 @@
 // though the high-frequency content is fine. A low-shelf at 200 Hz trims
 // that excess (see the mic chain below). It sits BEFORE the AGC so the
 // leveler re-normalizes and overall loudness is preserved.
+function srpCreateMixSafetyLimiter(audioCtx) {
+  const shaper = audioCtx.createWaveShaper();
+  const n = 32768;
+  const curve = new Float32Array(n);
+  const knee = 0.82;
+  const span = 1 - knee;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const sign = x < 0 ? -1 : 1;
+    const a = Math.abs(x);
+    const y = a <= knee
+      ? a
+      : knee + span * Math.tanh((a - knee) / span);
+    curve[i] = sign * y;
+  }
+  shaper.curve = curve;
+  shaper.oversample = '2x';
+  return shaper;
+}
+
 function srpMixAudioTracks(tracks, options) {
-  const { noiseReduction, noiseGate, micTrack } = options || {};
+  const { noiseReduction, noiseGate, micTrack, systemMixGain } = options || {};
   const valid = tracks.filter(Boolean);
   if (valid.length === 0) return null;
 
@@ -119,8 +139,22 @@ function srpMixAudioTracks(tracks, options) {
     return valid[0];
   }
 
-  const audioCtx = new AudioContext();
+  let audioCtx;
+  try {
+    audioCtx = new AudioContext({ sampleRate: 48000 });
+  } catch (e) {
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   const destination = audioCtx.createMediaStreamDestination();
+  const mixBus = audioCtx.createGain();
+  const mixSafety = srpCreateMixSafetyLimiter(audioCtx);
+  const mixHeadroom = audioCtx.createGain();
+  mixHeadroom.gain.value = 0.86;
+  mixBus.connect(mixSafety);
+  mixSafety.connect(mixHeadroom);
+  mixHeadroom.connect(destination);
+  const mixingMicAndSystem = hasMic && valid.some((track) => micTrack !== track);
   let micProcessor = null;
 
   valid.forEach((track) => {
@@ -142,7 +176,7 @@ function srpMixAudioTracks(tracks, options) {
       const deboom = audioCtx.createBiquadFilter();
       deboom.type = 'lowshelf';
       deboom.frequency.value = 200;
-      deboom.gain.value = processMic ? -4 : -3;
+      deboom.gain.value = processMic ? -2 : -2;
       highpass.connect(deboom);
       let voiceOutput = deboom;
       if (runMicDsp) {
@@ -173,11 +207,19 @@ function srpMixAudioTracks(tracks, options) {
       const presence = audioCtx.createBiquadFilter();
       presence.type = 'highshelf';
       presence.frequency.value = 2600;
-      presence.gain.value = processMic ? 3.0 : 1.5;
+      presence.gain.value = processMic ? 1.5 : 1.0;
       voiceOutput.connect(presence);
       output = presence;
+    } else if (mixingMicAndSystem) {
+      const systemGain = audioCtx.createGain();
+      // Area mode does not pass systemMixGain and therefore keeps the
+      // historical 0.72 balance. Screen/window can request a voice-priority
+      // mix without changing the shared Area audio path.
+      systemGain.gain.value = systemMixGain != null ? systemMixGain : 0.72;
+      output.connect(systemGain);
+      output = systemGain;
     }
-    output.connect(destination);
+    output.connect(mixBus);
   });
 
   const outTrack = destination.stream.getAudioTracks()[0] || null;
@@ -249,9 +291,9 @@ class SRPMicDsp {
     this.frameSize = o.frameSize || 480;
     // denoiser: { processFrame(Float32Array(frameSize)) -> vad (0..1) } | null
     this.denoiser = o.denoiser || null;
-    this.targetPeak = o.targetPeak != null ? o.targetPeak : 0.5; // -6 dBFS
-    this.minGain = o.minGain != null ? o.minGain : 1;
-    this.maxGain = o.maxGain != null ? o.maxGain : 8;             // up to +18 dB
+    this.targetPeak = o.targetPeak != null ? o.targetPeak : 0.38; // ~-8.4 dBFS
+    this.minGain = o.minGain != null ? o.minGain : 0.5;
+    this.maxGain = o.maxGain != null ? o.maxGain : 4;             // up to +12 dB
     // Per-frame (~10 ms) smoothing coefficients. AGC direction matters:
     // gain cuts back FAST on loud onsets (avoid over-boost / pumping) and
     // rises GENTLY when the mic goes quiet (avoid gulping); the tracked
@@ -558,7 +600,7 @@ class SRPMicDsp {
 // rnnoise:false keeps RNNoise off (Voice Enhance disabled) while still
 // allowing the gate's energy-based detection.
 function srpCreateMicProcessor(audioCtx, micInput, options) {
-  const bufferSize = 4096;
+  const bufferSize = 1024;
   const node = audioCtx.createScriptProcessor(bufferSize, 1, 1);
   const dsp = new SRPMicDsp({ ...(options || {}) });
   let tornDown = false;

@@ -5,7 +5,7 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
-  "description": "High quality area, tab, and screen recorder with pause/resume, webcam overlay, selectable audio sources, annotations (pencil + draggable colored text), screenshots via the recording widget, recording history, and an optional countdown before recording starts.",
+  "description": "Record tabs, windows, screens, or selected areas with audio, webcam, annotations, screenshots, history, and editing.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -40,15 +40,15 @@
   },
   "commands": {
     "toggle-recording": {
-      "suggested_key": { "default": "Ctrl+Shift+R" },
+      "suggested_key": { "default": "Ctrl+Shift+7" },
       "description": "Start/stop recording"
     },
     "toggle-pause": {
-      "suggested_key": { "default": "Ctrl+Shift+P" },
+      "suggested_key": { "default": "Ctrl+Shift+8" },
       "description": "Pause/resume recording"
     },
     "take-screenshot": {
-      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "suggested_key": { "default": "Ctrl+Shift+9" },
       "description": "Capture a screenshot"
     }
   },
