@@ -18,14 +18,12 @@ const DEFAULT_RECORD_CONFIG = {
   webcamShape: 'circle',
   annotate: true,
   countdown: true,
-  // Mic enhancements are ALWAYS on for any recording that captures a
-  // microphone (normalized by normalizeRecordConfig below on every start
-  // path): noise removal (RNNoise denoise) while speaking, plus the
-  // noise gate that mutes the mic entirely unless speech is detected
-  // (fan/music/background go silent between phrases). Both only touch
-  // the mic track, so system-only / no-audio recordings are unaffected.
+  // RNNoise voice cleanup stays on for microphone recordings. The
+  // hard mute gate stays OFF: real-speech QA showed it can swallow quiet
+  // words (and can mute almost everything before RNNoise is ready).
+  // System-only / no-audio recordings are unaffected.
   noiseReduction: true,
-  noiseGate: true,
+  noiseGate: false,
   // WebM (VP8) output by default — it records cleanly with no H.264
   // macroblock-padding quirks (Chrome's OpenH264 pads non-16-aligned
   // frames and the MP4 shows the padding as a duplicated bottom strip),
@@ -69,7 +67,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function normalizeRecordConfig(config) {
   const c = config || {};
   c.noiseReduction = true;
-  c.noiseGate = true;
+  c.noiseGate = false;
   c.captionsLang = 'en-US';
   return c;
 }
@@ -251,7 +249,16 @@ async function handleMessage(request, sender) {
       // This recording genuinely began — it supersedes any leftover
       // recovery snapshot from a previous recording.
       await SRPDB.recoveryClear();
-      await openWidgetWindow();
+      // A separate popup is safe for tab/window capture because it is not
+      // part of the selected surface. For an entire-monitor capture it
+      // would be recorded too, creating the large recursive preview seen
+      // in finished videos. Keep full-screen capture clean and rely on the
+      // extension badge + keyboard shortcuts while the monitor is shared.
+      if (request.surface === 'monitor') {
+        await closeWidgetWindow();
+      } else {
+        await openWidgetWindow();
+      }
       // Tutorial effects (click ripples) in screen mode: best-effort
       // injection into the active tab — the surface most users capture.
       // Never allowed to affect the recording.
@@ -289,19 +296,6 @@ async function handleMessage(request, sender) {
       );
       return;
 
-    // Test instrumentation: selector.js reports the exact area-mode crop
-    // math (capture dimensions, viewport, detection flags, computed crop)
-    // right after computing it. The service worker relays it to a local
-    // listener (http://127.0.0.1:8237) so a "recorded area is shifted"
-    // report can be diagnosed from the real numbers on the user's
-    // machine. Best-effort: failures are swallowed; a page with no
-    // listener gets nothing.
-    case 'SRP_DIAG':
-      fetch('http://127.0.0.1:8237/?d=' + encodeURIComponent(JSON.stringify(request.data || {})), {
-        mode: 'no-cors'
-      }).catch(() => {});
-      return;
-
     // Sent by the blank-frame watchdog in offscreen.js / selector.js when
     // the captured frames come out as one solid color (typically blue)
     // while recording fullscreen video. Root cause: Chrome's
@@ -315,6 +309,15 @@ async function handleMessage(request, sender) {
     // audio for window/entire-screen capture at all. The recording
     // continues — but silently losing all sound reads as broken, so say
     // so and point at the fix.
+    case 'MICROPHONE_UNAVAILABLE':
+      notifyUser(
+        'Microphone audio is off',
+        request.audioSource === 'both'
+          ? `Screen Recorder Pro couldn't access your microphone. The recording will continue with system audio only if Chrome supplied it. Allow Microphone for "Screen Recorder Pro", then record again.`
+          : `Screen Recorder Pro couldn't access your microphone, so this recording has no voice audio. Allow Microphone for "Screen Recorder Pro", then record again.`
+      );
+      return;
+
     case 'SYSTEM_AUDIO_MISSING':
       notifyUser(
         'No system audio captured',

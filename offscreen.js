@@ -199,7 +199,7 @@ let blankAlerted = false;
 // a color that keeps changing (real content) must reset the streak.
 let blankPrevMean = null;
 
-function startPreview(source) {
+function startPreview(source, emitPreview = true) {
   const pv = document.createElement('canvas');
   // 448x252 (16:9): big enough that the widget's live preview — and the
   // floating PiP window it can open — actually looks like the recording
@@ -252,18 +252,20 @@ function startPreview(source) {
           }
         }
       }
-      chrome.runtime.sendMessage({
-        action: 'RECORDING_PREVIEW',
-        dataUrl: pv.toDataURL('image/jpeg', 0.4),
-        // Bubble position + recording dimensions so the widget can zoom
-        // its view onto the bubble and map drags to recording pixels.
-        bubble: screenBubble ? { x: screenBubble.x, y: screenBubble.y, d: screenBubble.d } : null,
-        dims: screenDims
-      }).catch(() => {});
+      if (emitPreview) {
+        chrome.runtime.sendMessage({
+          action: 'RECORDING_PREVIEW',
+          dataUrl: pv.toDataURL('image/jpeg', 0.4),
+          // Bubble position + recording dimensions so the widget can zoom
+          // its view onto the bubble and map drags to recording pixels.
+          bubble: screenBubble ? { x: screenBubble.x, y: screenBubble.y, d: screenBubble.d } : null,
+          dims: screenDims
+        }).catch(() => {});
+      }
     } catch (e) {
       // Preview is cosmetic — never let it interfere with recording.
     }
-  }, 200);
+  }, emitPreview ? 200 : 1000);
 }
 
 function stopPreview() {
@@ -346,6 +348,25 @@ function attachMixedAudio(stream, tracks, options) {
   }
 }
 
+// Screen/window recordings should keep the capture's native geometry.
+// Canvas compositing is only needed when we actually add pixels (webcam
+// or captions). If a canvas is required, clip at most one odd edge so the
+// encoder receives even dimensions without padding a 1920x1080 monitor to
+// 1920x1088 or scaling the whole desktop.
+function screenCanvasSize(width, height) {
+  const sourceW = Math.max(2, Math.round(width || 1280));
+  const sourceH = Math.max(2, Math.round(height || 720));
+  const w = Math.max(2, sourceW - (sourceW % 2));
+  const h = Math.max(2, sourceH - (sourceH % 2));
+  return {
+    w,
+    h,
+    drawW: sourceW,
+    drawH: sourceH,
+    clipped: w !== sourceW || h !== sourceH
+  };
+}
+
 async function startRecording(config) {
   // A second START_CAPTURE while the first is still starting (or
   // actively recording) must be ignored: calling getDisplayMedia again
@@ -363,12 +384,16 @@ async function startRecording(config) {
   blankStreak = 0;
   blankAlerted = false;
   blankPrevMean = null;
-  // Webcam frame source for the canvas bubble (see the pipeline below): a
-  // WebCodecs MediaStreamTrackProcessor reader is preferred, with the
-  // video element as fallback. Declared at function scope so both onstop
-  // and the catch block can clean up.
+  // WebCodecs readers bypass hidden-document <video> presentation
+  // throttling. The display reader feeds the main canvas in webcam mode;
+  // the webcam reader feeds the bubble. Video elements remain fallbacks.
+  // Function scope lets onstop/catch clean every live frame deterministically.
+  let displayReader = null;
+  let latestDisplayFrame = null;
+  let displayFrameSeq = 0;
   let webcamReader = null;
   let latestWebcamFrame = null;
+  let webcamFrameSeq = 0;
   try {
     currentConfig = config;
 
@@ -381,6 +406,7 @@ async function startRecording(config) {
     // picker still pre-selects the whole screen.
     const preset = srpGetPreset(config.quality);
     reportProgress('picker-opening', 'getDisplayMedia called');
+    const wantsSystemAudio = config.audioSource === 'system' || config.audioSource === 'both';
     const displayStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         cursor: config.cursor ? 'always' : 'never',
@@ -392,7 +418,12 @@ async function startRecording(config) {
         width: { ideal: preset.width },
         height: { ideal: preset.height }
       },
-      audio: config.audioSource === 'system' || config.audioSource === 'both'
+      audio: wantsSystemAudio ? { suppressLocalAudioPlayback: false } : false,
+      // Chrome 105+ / 140+ hints. They do not manufacture audio on Linux,
+      // but on platforms that support desktop/window audio they make the
+      // intended source explicit instead of relying on browser defaults.
+      systemAudio: wantsSystemAudio ? 'include' : 'exclude',
+      windowAudio: wantsSystemAudio ? 'system' : 'exclude'
     });
     activeStreams.push(displayStream);
 
@@ -438,12 +469,18 @@ async function startRecording(config) {
           activeStreams.push(micStream);
         } catch (e2) {
           console.warn('Microphone unavailable, continuing without it:', e2.message);
+          chrome.runtime.sendMessage({
+            action: 'MICROPHONE_UNAVAILABLE',
+            reason: e2.name,
+            audioSource: config.audioSource
+          }).catch(() => {});
         }
       }
     }
 
     const displayVideoTrack = displayStream.getVideoTracks()[0];
     const trackSettings = displayVideoTrack.getSettings();
+    const emitFloatingPreview = trackSettings.displaySurface !== 'monitor';
     reportProgress('picker-resolved', (trackSettings.displaySurface || 'surface') + ' ' + (trackSettings.width || '?') + 'x' + (trackSettings.height || '?'));
 
     const systemAudioTrack = displayStream.getAudioTracks()[0] || null;
@@ -460,21 +497,10 @@ async function startRecording(config) {
     }
     const micTrack = micStream ? micStream.getAudioTracks()[0] : null;
 
-    // The pixel alignment every recording canvas must have. H.264 (MP4)
-    // encodes on 16x16 macroblocks and Chrome pads the frame to that
-    // boundary WITHOUT cropping it back off in the MP4 container — the
-    // padded rows (edge-replicated by the encoder) play back as a
-    // visible duplicated strip at the BOTTOM of the video. That is the
-    // MP4-only "double bottom" artifact: VP8/VP9 (WebM) are cropped
-    // correctly, so they only need even dimensions. srpRecordingCanvasSize
-    // (below) guarantees the recorded frame is a multiple of this unit —
-    // either by padding 16:9-ish captures UP to the standard frame or by
-    // rounding down — so the encoder never pads anything. The mime is
-    // resolved up front (same deterministic pick srpCreateMediaRecorder
-    // uses) so the alignment is decided before the pipeline is built.
-    const alignUnit = srpAlignUnit(srpPickMimeType(null, config.outputFormat === 'webm'));
-
     // --- Recording pipeline selection ---
+    // Screen/window mode preserves the browser's native capture geometry.
+    // Canvas compositing is used only when we actually need to add pixels
+    // (webcam or captions), never just to force codec macroblock sizing.
     let compositeStream;
     let canvas = null; // only set in the canvas (webcam) path
     let drawTimer = null;
@@ -490,6 +516,40 @@ async function startRecording(config) {
       await waitForMetadata(video);
       video.play().catch(() => {});
       await waitForVideoData(video);
+
+      // --- Display frame source ---
+      // A hidden offscreen document may present a <video> element at a much
+      // lower cadence than the captured track. Read VideoFrames directly
+      // from the display track so webcam compositing follows the source
+      // cadence instead of the hidden element's presentation cadence.
+      if (typeof MediaStreamTrackProcessor !== 'undefined') {
+        try {
+          const displayProcessor = new MediaStreamTrackProcessor({ track: displayVideoTrack });
+          displayReader = displayProcessor.readable.getReader();
+          (async () => {
+            try {
+              while (true) {
+                const { value, done } = await displayReader.read();
+                if (done) {
+                  if (value) value.close();
+                  break;
+                }
+                if (latestDisplayFrame) latestDisplayFrame.close();
+                latestDisplayFrame = value;
+                displayFrameSeq += 1;
+              }
+            } catch (e) {
+              if (latestDisplayFrame) {
+                try { latestDisplayFrame.close(); } catch (e2) {}
+                latestDisplayFrame = null;
+              }
+              displayReader = null;
+            }
+          })();
+        } catch (e) {
+          displayReader = null;
+        }
+      }
 
       // --- Webcam frame source ---
       // Chrome throttles <video> element frame presentation in hidden
@@ -512,7 +572,7 @@ async function startRecording(config) {
             try {
               while (true) {
                 const { value, done } = await webcamReader.read();
-                if (done || !renderLoopActive) {
+                if (done) {
                   if (value) value.close();
                   break;
                 }
@@ -572,13 +632,10 @@ async function startRecording(config) {
       // MediaRecorder fail outright) even if metadata never arrived.
       let canvasWidth = video.videoWidth || trackSettings.width || 1280;
       let canvasHeight = video.videoHeight || trackSettings.height || 720;
-      // Target canvas size: 16:9-ish captures are padded UP to the
-      // standard frame (page at native 1:1, black below) so players
-      // render ~1:1 instead of upscaling the odd height and blurring
-      // text; everything else rounds DOWN to the container's alignment
-      // unit (16 for H.264/MP4, 2 for WebM) so the encoder never pads
-      // anything — see srpRecordingCanvasSize in qualityPresets.js.
-      const captureSize = srpRecordingCanvasSize(canvasWidth, canvasHeight, alignUnit);
+      // Preserve the selected screen/window's native dimensions.
+      // Only an odd final row/column is clipped when canvas compositing is
+      // required; a normal 1920x1080 capture remains exactly 1920x1080.
+      const captureSize = screenCanvasSize(canvasWidth, canvasHeight);
       canvasWidth = captureSize.w;
       canvasHeight = captureSize.h;
 
@@ -590,10 +647,9 @@ async function startRecording(config) {
       // offscreen document nothing is presented, and desync is a known
       // source of broken/stalled canvas.captureStream() output.
       const ctx = canvas.getContext('2d', { alpha: false });
-      // Pixel-crisp: the canvas is sized from the DECODED frame (near
-      // 1:1), so nearest-neighbor sampling keeps text edges hard instead
-      // of letting bilinear interpolation soften them during the tiny
-      // 16-alignment crop.
+      // Pixel-crisp: the canvas is sized from the decoded frame and
+      // differs by at most one odd edge pixel, so nearest-neighbor keeps
+      // text edges hard instead of softening the desktop during compositing.
       ctx.imageSmoothingEnabled = false;
 
       // The bubble starts at the corner picked in the popup, but unlike
@@ -637,8 +693,8 @@ async function startRecording(config) {
       // cheap and harmless).
       const cadence = 1000 / (config.fps || 60);
       let lastDrawnVideoTime = -1;
+      let lastDrawnDisplaySeq = -1;
       let lastDrawnBubble = null; // snapshot of the last drawn bubble position
-      let webcamFrameSeq = 0; // bumped per webcam frame read (live bubble)
       let lastDrawnWebcamSeq = -1;
       let lastCaptionDrawn = '';
 
@@ -652,22 +708,26 @@ async function startRecording(config) {
         // arrived (so the face in the bubble stays live even on a static
         // screen).
         const videoTime = video.readyState >= video.HAVE_CURRENT_DATA ? video.currentTime : -1;
+        const displayChanged = displayReader
+          ? displayFrameSeq !== lastDrawnDisplaySeq
+          : videoTime !== lastDrawnVideoTime;
         const b = screenBubble;
         const bubbleMoved = !lastDrawnBubble || !b ||
           b.x !== lastDrawnBubble.x || b.y !== lastDrawnBubble.y || b.d !== lastDrawnBubble.d;
         const webcamChanged = webcamFrameSeq !== lastDrawnWebcamSeq;
         const captionChanged = captionText !== lastCaptionDrawn;
-        if (videoTime !== lastDrawnVideoTime || bubbleMoved || webcamChanged || captionChanged) {
+        if (displayChanged || bubbleMoved || webcamChanged || captionChanged) {
           lastDrawnVideoTime = videoTime;
+          lastDrawnDisplaySeq = displayFrameSeq;
           lastDrawnBubble = b ? { x: b.x, y: b.y, d: b.d } : null;
           lastDrawnWebcamSeq = webcamFrameSeq;
           lastCaptionDrawn = captionText;
           ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-          if (videoTime >= 0) {
-            // drawW/drawH: native 1:1 in the pad case (text stays
-            // pixel-perfect, black bar below), scaled-to-fill in the
-            // crop case.
-            ctx.drawImage(video, 0, 0, captureSize.drawW, captureSize.drawH);
+          const displaySource = latestDisplayFrame || (videoTime >= 0 ? video : null);
+          if (displaySource) {
+            // Native-size draw; when a source edge is odd the canvas is one
+            // pixel smaller and simply clips that final row/column.
+            ctx.drawImage(displaySource, 0, 0, captureSize.drawW, captureSize.drawH);
           }
           if (b) {
             ctx.save();
@@ -695,75 +755,48 @@ async function startRecording(config) {
       compositeStream = canvas.captureStream(config.fps || 60);
       attachMixedAudio(compositeStream, [systemAudioTrack, micTrack], {
         noiseReduction: config.noiseReduction,
-        noiseGate: config.noiseGate,
-        micTrack
+        // Screen/window keeps RNNoise noise removal, but never hard-gates
+        // speech. This preserves quiet and first words while RNNoise warms up.
+        noiseGate: false,
+        micTrack,
+        systemMixGain: config.audioSource === 'both' ? 0.35 : 0.72
       });
       reportProgress('pipeline', 'canvas compositing with webcam overlay');
-      // Live preview: drawn straight from the composited canvas, so the
-      // webcam bubble is visible in the widget exactly as it will appear
-      // in the finished recording.
-      startPreview({ canvas });
+      // Keep the internal preview/watchdog alive for every capture, but on
+      // an entire monitor do not emit floating-preview frames that have no
+      // visible consumer (the monitor widget is intentionally closed).
+      startPreview({ canvas }, emitFloatingPreview);
     } else {
-      // Direct path: record the raw display stream. No video element, no
-      // canvas — the least fragile thing a hidden document can do. One
-      // exception: when the capture's decoded size differs from the
-      // recording frame srpRecordingCanvasSize computes — H.264/MP4
-      // needs multiples of 16 (a maximized window is usually ~1920x1017
-      // or 1920x942, neither a multiple of 16; fractional DPI scaling
-      // makes this even more common) and misaligned captures make Chrome
-      // pad the last rows, which plays back as a duplicated/green/black
-      // strip at the BOTTOM — the MP4-only "double bottom" artifact.
-      // 16:9-ish captures are padded UP to the standard frame (page at
-      // native 1:1, black below) so players render ~1:1 instead of
-      // upscaling the odd height and blurring text; everything else is
-      // resampled through a canvas rounded down to a multiple of the
-      // unit (loses at most unit-1 px). Either way the recorded file is
-      // clean and encoder-safe.
+      // Direct path: record the raw display stream whenever possible.
+      // The preview <video> is only a decoded-size probe + cosmetic live
+      // preview; it is not part of the recorded path unless captions or
+      // an odd source edge require a tiny canvas composition.
       //
-      // The check uses the video element's DECODED dimensions — not
-      // getSettings(), which reports the *logical* size on DPI-scaled
-      // displays and can disagree with the real frames (and is sometimes
-      // missing entirely). The preview video element is created anyway
-      // for the cosmetic live preview, so it doubles as the dimension
-      // probe with zero extra cost.
+      // Decoded dimensions are the source of truth because getSettings()
+      // can report logical DPI-scaled dimensions that differ from the
+      // actual frames delivered by Chrome.
       const previewVideo = document.createElement('video');
       previewVideo.srcObject = displayStream;
       previewVideo.muted = true;
       previewVideo.playsInline = true;
       previewVideo.play().catch(() => {});
-      // The DECODED frame size is the ground truth for the alignment
-      // check — NOT getSettings(). On DPI-scaled displays getSettings()
-      // reports the *logical* size, which is usually 16-aligned even
-      // when the real frames are not (a 942-row window can report as
-      // 944), and trusting it sent the misaligned frames straight to
-      // the H.264 encoder — the "double bottom" came right back. The
-      // preview video element is created anyway for the cosmetic live
-      // preview, so waiting for its metadata (polled with a hard
-      // timeout — it cannot hang) costs only a few frames of startup.
+      // Wait for decoded dimensions, with a hard timeout so a hidden
+      // offscreen document can never hang the recording start.
       await waitForMetadata(previewVideo, 4000);
       const realW = previewVideo.videoWidth || trackSettings.width || 1280;
       const realH = previewVideo.videoHeight || trackSettings.height || 720;
-      // Target canvas size: 16:9-ish captures are padded UP to the
-      // standard frame (page at native 1:1, black below — so players
-      // render ~1:1 instead of upscaling the odd height and blurring
-      // text), everything else rounds DOWN to the alignment unit so the
-      // encoder never pads anything (the MP4-only "double bottom"). The
-      // canvas path only engages when the capture differs from the
-      // target — already-aligned 16:9 captures record the raw stream.
-      const captureSize = srpRecordingCanvasSize(realW, realH, alignUnit);
-      // Captions must be drawn into the pixels, so they force the canvas
-      // pipeline even when the capture is already aligned (the direct
-      // raw-stream path can't composite anything). This is the same
-      // canvas path the webcam bubble uses, minus the bubble.
-      const needsCanvas = !!config.captions || captureSize.w !== realW || captureSize.h !== realH;
+      // Keep the raw stream for normal screen/window capture so Chrome
+      // can preserve the source cadence without a full-resolution hidden
+      // canvas. Captions are the only reason this no-webcam path composites.
+      const captureSize = screenCanvasSize(realW, realH);
+      const needsCanvas = !!config.captions;
       if (needsCanvas) {
         canvas = document.createElement('canvas');
         canvas.width = captureSize.w;
         canvas.height = captureSize.h;
         const ctx = canvas.getContext('2d', { alpha: false });
-        // The resample is a <2% crop, so nearest-neighbor keeps every
-        // remaining pixel untouched — bilinear smoothing here softened
-        // text edges relative to the untouched WebM path.
+        // This path is native-size except for a possible one-pixel
+        // edge clip, so nearest-neighbor keeps desktop text crisp.
         ctx.imageSmoothingEnabled = false;
         renderLoopActive = true;
         const cadence = 1000 / (config.fps || 60);
@@ -779,9 +812,7 @@ async function startRecording(config) {
             lastCaptionDrawn = captionText;
             ctx.clearRect(0, 0, captureSize.w, captureSize.h);
             if (t >= 0) {
-              // drawW/drawH: native 1:1 in the pad case (text stays
-              // pixel-perfect, black bar below), scaled-to-fill in the
-              // crop case.
+              // Native-size draw; an odd final row/column is clipped.
               ctx.drawImage(previewVideo, 0, 0, captureSize.drawW, captureSize.drawH);
             }
             if (captionText && typeof srpDrawCaptions === 'function') {
@@ -794,18 +825,24 @@ async function startRecording(config) {
         compositeStream = canvas.captureStream(config.fps || 60);
         attachMixedAudio(compositeStream, [systemAudioTrack, micTrack], {
           noiseReduction: config.noiseReduction,
-          noiseGate: config.noiseGate,
-          micTrack
+          // Screen/window keeps RNNoise noise removal, but never hard-gates
+          // speech. This preserves quiet and first words while RNNoise warms up.
+          noiseGate: false,
+          micTrack,
+          systemMixGain: config.audioSource === 'both' ? 0.35 : 0.72
         });
-        reportProgress('pipeline', captureSize.pad ? 'canvas compose (capture → 16:9 padded frame)' : 'canvas resample (capture size → encoder-aligned)');
+        reportProgress('pipeline', captureSize.clipped ? 'canvas compose (native frame, 1px edge clip)' : 'canvas compose (native frame)');
         screenDims = { w: captureSize.w, h: captureSize.h };
-        startPreview({ canvas });
+        startPreview({ canvas }, emitFloatingPreview);
       } else {
         compositeStream = displayStream;
         attachMixedAudio(compositeStream, [systemAudioTrack, micTrack], {
           noiseReduction: config.noiseReduction,
-          noiseGate: config.noiseGate,
-          micTrack
+          // Screen/window keeps RNNoise noise removal, but never hard-gates
+          // speech. This preserves quiet and first words while RNNoise warms up.
+          noiseGate: false,
+          micTrack,
+          systemMixGain: config.audioSource === 'both' ? 0.35 : 0.72
         });
         reportProgress('pipeline', 'direct stream recording (no webcam)');
         // Live preview from the raw stream. The video element is ONLY
@@ -813,7 +850,7 @@ async function startRecording(config) {
         // pipeline), so even if it misbehaves the recording is
         // completely unaffected.
         screenDims = { w: realW, h: realH };
-        startPreview({ video: previewVideo });
+        startPreview({ video: previewVideo }, emitFloatingPreview);
       }
     }
 
@@ -833,6 +870,17 @@ async function startRecording(config) {
     const recorderInfo = srpCreateMediaRecorder(compositeStream, bitrate, null, config.outputFormat === 'webm');
     mediaRecorder = recorderInfo.recorder;
     const recorderMime = recorderInfo.mimeType;
+    // Raw display streams can have odd pixel dimensions (for example a
+    // 1599x947 window). VP8/WebM preserves those dimensions, but H.264/MP4
+    // encoders require 4:2:0-compatible even dimensions and Chrome clips the
+    // final odd row/column. Keep History/recovery metadata aligned with the
+    // actual file rather than labeling a 1598x946 MP4 as 1599x947.
+    const recordedWidth = srpIsMp4Mime(recorderMime)
+      ? Math.max(2, canvasWidth - (canvasWidth % 2))
+      : canvasWidth;
+    const recordedHeight = srpIsMp4Mime(recorderMime)
+      ? Math.max(2, canvasHeight - (canvasHeight % 2))
+      : canvasHeight;
     recordedChunks = [];
     isPaused = false;
     totalPausedMs = 0;
@@ -856,6 +904,8 @@ async function startRecording(config) {
       recoverySentChunks = 0;
       screenBubble = null;
       screenDims = null;
+      if (displayReader) { try { displayReader.cancel(); } catch (e) {} displayReader = null; }
+      if (latestDisplayFrame) { try { latestDisplayFrame.close(); } catch (e) {} latestDisplayFrame = null; }
       if (webcamReader) { try { webcamReader.cancel(); } catch (e) {} webcamReader = null; }
       if (latestWebcamFrame) { try { latestWebcamFrame.close(); } catch (e) {} latestWebcamFrame = null; }
       if (captionEngine) { try { captionEngine.stop(); } catch (e) {} captionEngine = null; }
@@ -869,7 +919,7 @@ async function startRecording(config) {
       // before the save finishes. Saving the value up front keeps the
       // history entry labeled with the recording it actually belongs to.
       const savedMode = (currentConfig && currentConfig.mode) || 'screen';
-      const resolution = `${canvasWidth}x${canvasHeight}`;
+      const resolution = `${recordedWidth}x${recordedHeight}`;
       const durationSec = Math.round((Date.now() - recordStartTime - totalPausedMs) / 1000);
 
       const blob = new Blob(recordedChunks, { type: recorderMime });
@@ -1013,7 +1063,7 @@ async function startRecording(config) {
           action: 'RECOVERY_APPEND',
           chunk: srpRecoveryToBase64(buffer),
           mode: 'screen',
-          resolution: `${canvasWidth}x${canvasHeight}`,
+          resolution: `${recordedWidth}x${recordedHeight}`,
           mimeType: recorderMime
         }).catch(() => {});
       } catch (e) {
@@ -1026,7 +1076,13 @@ async function startRecording(config) {
     // background.js persists isRecording/recordStartTime from this
     // message — the offscreen document never writes storage itself (it's
     // not reliably available here; see the note in onstop).
-    chrome.runtime.sendMessage({ action: 'RECORDING_STARTED', mode: config.mode, recordStartTime }).catch(() => {});
+    chrome.runtime.sendMessage({
+      action: 'RECORDING_STARTED',
+      mode: config.mode,
+      recordStartTime,
+      surface: trackSettings.displaySurface || 'unknown',
+      sourceFrameRate: trackSettings.frameRate || null
+    }).catch(() => {});
   } catch (err) {
     // This path must ALWAYS run to completion: it tells background.js to
     // reset its own state + close the widget. Nothing here touches
@@ -1037,6 +1093,8 @@ async function startRecording(config) {
     if (drawTimer) clearTimeout(drawTimer);
     stopPreview();
     if (recoveryTimer) { clearInterval(recoveryTimer); recoveryTimer = null; }
+    if (displayReader) { try { displayReader.cancel(); } catch (e) {} displayReader = null; }
+    if (latestDisplayFrame) { try { latestDisplayFrame.close(); } catch (e) {} latestDisplayFrame = null; }
     if (webcamReader) { try { webcamReader.cancel(); } catch (e) {} webcamReader = null; }
     if (latestWebcamFrame) { try { latestWebcamFrame.close(); } catch (e) {} latestWebcamFrame = null; }
     if (captionEngine) { try { captionEngine.stop(); } catch (e) {} captionEngine = null; }
